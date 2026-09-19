@@ -177,6 +177,11 @@ RUN python3 /opt/dsv41/patch_apc_head_lease.py
 RUN python3 /opt/dsv41/patch_h2d_stage.py
 RUN python3 /opt/dsv41/patch_sm120_block64.py
 RUN python3 /opt/dsv41/patch_memory_log.py
+# Composition gate: later overlays must not rewrite any exact snippet owned by
+# the conversation head-lease patch.  Runtime applies the lease patch again on
+# every launch, so prove that re-entry here instead of discovering drift during
+# a production checkpoint switch.
+RUN python3 /opt/dsv41/patch_apc_head_lease.py
 
 RUN EXL3_SELFCHECK_GPU=0 python3 /opt/dsv41/test_exl3_overlay.py \
     && python3 /opt/dsv41/test_suppress_stops.py \

@@ -33,7 +33,15 @@ def test_recipe_wiring() -> None:
     assert start.count(":/opt/dsv41/patch_apc_head_lease.py:ro") == 2
     assert 'DSV41_APC_HEAD_LEASE="${DSV41_APC_HEAD_LEASE:-1}"' in start
     assert "_glm53_validate_enum DSV41_APC_HEAD_LEASE" in start
-    assert "RUN python3 /opt/dsv41/patch_apc_head_lease.py" in dockerfile
+    lease_run = "RUN python3 /opt/dsv41/patch_apc_head_lease.py"
+    assert dockerfile.count(lease_run) == 2
+    lease_runs = [dockerfile.index(lease_run), dockerfile.rindex(lease_run)]
+    assert lease_runs[0] < dockerfile.index(
+        "RUN python3 /opt/dsv41/patch_h2d_stage.py",
+    )
+    assert lease_runs[1] > dockerfile.index(
+        "RUN python3 /opt/dsv41/patch_memory_log.py",
+    )
     assert "DSV41_REQUIRE_VLLM=1 python3 /opt/dsv41/test_apc_head_lease.py" in dockerfile
 
 
