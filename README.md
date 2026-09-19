@@ -68,6 +68,23 @@ post-load page-cache drop. Engram tables are never pinned — the row store repl
 Raise one knob at a time and check `MemAvailable` **after a long prompt**, not after a boot. Every extra 0.5 GiB of KV pool costs ~1 GiB of head prefill margin: a 3 GiB pool boots and
 passes the smoke test but dies at ~470k of a 600k prompt.
 
+### Conversation-head cache leases
+
+The shipped launcher enables `DSV41_APC_HEAD_LEASE=1`. A compatible client can
+send opaque `prefix_cache_lease_scope` and `prefix_cache_lease` values in
+`vllm_xargs`; after a normally completed request, the latest reusable prefix
+for each active conversation is moved behind ordinary/stale cache entries in
+the global eviction queue. Starting a new session in the same scope releases
+the previous head.
+
+This is eviction priority, not memory reservation: leased blocks keep
+`ref_cnt=0`, remain in the free queue, and are still reclaimed when the pool is
+actually full. It therefore does not increase the 2.5 GiB KV pool or promise
+that two 500k contexts fit simultaneously. Aborted, errored, length-capped, or
+repetition-stopped requests do not replace a known-good head. Set
+`DSV41_APC_HEAD_LEASE=0` and restart at a normal maintenance window to disable
+the policy; clients that do not send lease metadata retain stock LRU behavior.
+
 ### Memory guard — off by default, and not needed in practice
 
 `scripts/memguard.sh` is a watchdog that samples `/proc/meminfo` `MemAvailable` once a second and

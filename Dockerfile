@@ -126,6 +126,7 @@ COPY overlay/patch_suppress_stops_in_reasoning.py /opt/dsv41/patch_suppress_stop
 COPY overlay/patch_scheduler_decode_floor.py /opt/dsv41/patch_scheduler_decode_floor.py
 COPY overlay/patch_xgrammar_termination.py /opt/dsv41/patch_xgrammar_termination.py
 COPY overlay/patch_spinwait.py /opt/dsv41/patch_spinwait.py
+COPY overlay/patch_apc_head_lease.py /opt/dsv41/patch_apc_head_lease.py
 COPY overlay/patch_memory_log.py /opt/dsv41/patch_memory_log.py
 COPY overlay/patch_h2d_stage.py /opt/dsv41/patch_h2d_stage.py
 COPY overlay/patch_sm120_block64.py /opt/dsv41/patch_sm120_block64.py
@@ -137,6 +138,7 @@ COPY tests/test_suppress_stops.py /opt/dsv41/test_suppress_stops.py
 COPY tests/test_scheduler_decode_floor.py /opt/dsv41/test_scheduler_decode_floor.py
 COPY tests/test_xgrammar_termination.py /opt/dsv41/test_xgrammar_termination.py
 COPY tests/test_spinwait_patch.py /opt/dsv41/test_spinwait_patch.py
+COPY tests/test_apc_head_lease.py /opt/dsv41/test_apc_head_lease.py
 COPY tests/test_engram_secondary.py /opt/dsv41/test_engram_secondary.py
 COPY tests/test_engram_layout.py /opt/dsv41/test_engram_layout.py
 COPY tests/test_row_store.py /opt/dsv41/test_row_store.py
@@ -171,6 +173,7 @@ RUN python3 /opt/dsv41/patch_suppress_stops_in_reasoning.py || echo "WARN: suppr
 RUN python3 /opt/dsv41/patch_scheduler_decode_floor.py || echo "WARN: scheduler patch skipped"
 RUN python3 /opt/dsv41/patch_xgrammar_termination.py || echo "WARN: xgrammar patch skipped (likely already upstream)"
 RUN python3 /opt/dsv41/patch_spinwait.py --preflight || echo "WARN: spinwait preflight skipped"
+RUN python3 /opt/dsv41/patch_apc_head_lease.py
 RUN python3 /opt/dsv41/patch_h2d_stage.py
 RUN python3 /opt/dsv41/patch_sm120_block64.py
 RUN python3 /opt/dsv41/patch_memory_log.py
@@ -179,6 +182,7 @@ RUN EXL3_SELFCHECK_GPU=0 python3 /opt/dsv41/test_exl3_overlay.py \
     && python3 /opt/dsv41/test_suppress_stops.py \
     && python3 /opt/dsv41/test_scheduler_decode_floor.py \
     && python3 /opt/dsv41/test_spinwait_patch.py \
+    && DSV41_REQUIRE_VLLM=1 python3 /opt/dsv41/test_apc_head_lease.py \
     && python3 /opt/dsv41/test_engram_secondary.py \
     && python3 /opt/dsv41/test_exl3_lm_head.py \
     && python3 /opt/dsv41/test_engram_layout.py \

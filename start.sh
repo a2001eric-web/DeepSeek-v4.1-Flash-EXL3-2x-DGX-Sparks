@@ -159,6 +159,7 @@ STOP_PATCH_HOST="${STOP_PATCH_HOST:-$SCRIPT_DIR/overlay/patch_suppress_stops_in_
 SCHED_PATCH_HOST="${SCHED_PATCH_HOST:-$SCRIPT_DIR/overlay/patch_scheduler_decode_floor.py}"
 XGRAMMAR_PATCH_HOST="${XGRAMMAR_PATCH_HOST:-$SCRIPT_DIR/overlay/patch_xgrammar_termination.py}"
 SPINWAIT_PATCH_HOST="${SPINWAIT_PATCH_HOST:-$SCRIPT_DIR/overlay/patch_spinwait.py}"
+APC_HEAD_LEASE_PATCH_HOST="${APC_HEAD_LEASE_PATCH_HOST:-$SCRIPT_DIR/overlay/patch_apc_head_lease.py}"
 EXL3_OVERLAY_HOST="${EXL3_OVERLAY_HOST:-$SCRIPT_DIR/overlay/exl3.py}"
 KMAP_HOST="${KMAP_HOST:-$SCRIPT_DIR/files/exl3_k_map.json}"
 QUANTIZATION="${QUANTIZATION:-exl3}"
@@ -270,6 +271,9 @@ DSV41_RESIDENT_SCALES="${DSV41_RESIDENT_SCALES:-0}"
 DSV41_IO_THREADS="${DSV41_IO_THREADS:-32}"
 DSV41_CACHE_WAYS="${DSV41_CACHE_WAYS:-4}"
 DSV41_STATS_SECONDS="${DSV41_STATS_SECONDS:-60}"
+# Best-effort conversation-head eviction priority. This does not pin blocks or
+# reserve capacity; 0 is the emergency kill switch.
+DSV41_APC_HEAD_LEASE="${DSV41_APC_HEAD_LEASE:-1}"
 # Host memory guard: kill the local container when MemAvailable drops under
 # this (GiB) so the kernel OOM killer never gets to wedge the node.
 # 0 = do not arm the memguard watchdog (default). vLLM itself runs at ~4 GiB
@@ -355,6 +359,7 @@ validate_numeric_config() {
     _glm53_validate_enum GLM53_INDEXER_WORKSPACE "${GLM53_INDEXER_WORKSPACE-stock}" \
         stock rightsize || return
     _glm53_validate_spinwait_ms || return
+    _glm53_validate_enum DSV41_APC_HEAD_LEASE "$DSV41_APC_HEAD_LEASE" 0 1 || return
 }
 # GLM53 numeric config guard (end)
 
@@ -1078,6 +1083,9 @@ fi
 
 [ -f "${MODEL_DIR}/config.json" ] || { say "FATAL: ${MODEL_DIR}/config.json missing"; ls -la "${MODEL_DIR}" | head; exit 1; }
 [ -d "${ENGRAM_MOUNT}" ] || { say "FATAL: ${ENGRAM_MOUNT} missing"; exit 1; }
+if [ -f /opt/dsv41/patch_apc_head_lease.py ]; then
+    python3 /opt/dsv41/patch_apc_head_lease.py
+fi
 for p in /opt/dsv41/patch_suppress_stops_in_reasoning.py \
          /opt/dsv41/patch_scheduler_decode_floor.py \
          /opt/dsv41/patch_xgrammar_termination.py \
@@ -1172,6 +1180,9 @@ fi
 
 [ -f "${MODEL_DIR}/config.json" ] || { say "FATAL: ${MODEL_DIR}/config.json missing"; ls -la "${MODEL_DIR}" | head; exit 1; }
 [ -d "${ENGRAM_MOUNT}" ] || { say "FATAL: ${ENGRAM_MOUNT} missing"; exit 1; }
+if [ -f /opt/dsv41/patch_apc_head_lease.py ]; then
+    python3 /opt/dsv41/patch_apc_head_lease.py
+fi
 for p in /opt/dsv41/patch_suppress_stops_in_reasoning.py \
          /opt/dsv41/patch_scheduler_decode_floor.py \
          /opt/dsv41/patch_xgrammar_termination.py \
@@ -1266,6 +1277,7 @@ launch_cluster() {
     scp -q -o BatchMode=yes "$SCHED_PATCH_HOST" "${WORKER_SSH}:/tmp/patch_scheduler_decode_floor.py"
     scp -q -o BatchMode=yes "$XGRAMMAR_PATCH_HOST" "${WORKER_SSH}:/tmp/patch_xgrammar_termination.py"
     scp -q -o BatchMode=yes "$SPINWAIT_PATCH_HOST" "${WORKER_SSH}:/tmp/patch_spinwait.py"
+    scp -q -o BatchMode=yes "$APC_HEAD_LEASE_PATCH_HOST" "${WORKER_SSH}:/tmp/patch_apc_head_lease.py"
     scp -q -o BatchMode=yes "$EXL3_OVERLAY_HOST" "${WORKER_SSH}:/tmp/dsv41-exl3.py"
     scp -q -o BatchMode=yes "$KMAP_HOST" "${WORKER_SSH}:/tmp/exl3_k_map.json"
     scp -q -o BatchMode=yes "$SCRIPT_DIR/overlay/patch_exl3_packed_names.py" "${WORKER_SSH}:/tmp/patch_exl3_packed_names.py"
@@ -1382,7 +1394,7 @@ launch_cluster() {
              EXL3_TEMP_ROWS_FUSED EXL3_FAT_SORTED EXL3_FAT_BATCHED EXL3_FAT_KERNEL \
              EXL3_FAT_GROUPED MODEL_DIR ENGRAM_MOUNT EXTRA_ARGS \
              DSV41_CACHE_GIB DSV41_RESIDENT_SCALES DSV41_IO_THREADS \
-             DSV41_CACHE_WAYS DSV41_STATS_SECONDS KV_CACHE_MEMORY_BYTES KV_BLOCK_SIZE \
+             DSV41_CACHE_WAYS DSV41_STATS_SECONDS DSV41_APC_HEAD_LEASE KV_CACHE_MEMORY_BYTES KV_BLOCK_SIZE \
              DSV41_SKIP_MIXED_WARMUP DSV41_DROP_PAGE_CACHE \
              DSV41_PREFILL_EMPTY_CACHE_MEMAVAIL_GIB DSV41_PREFILL_END_EMPTY_CACHE VLLM_SPARSE_INDEXER_MAX_LOGITS_MB \
              LONG_PREFILL_TOKEN_THRESHOLD; do
@@ -1421,6 +1433,7 @@ launch_cluster() {
         -v '/tmp/patch_scheduler_decode_floor.py:/opt/dsv41/patch_scheduler_decode_floor.py:ro' \
         -v '/tmp/patch_xgrammar_termination.py:/opt/dsv41/patch_xgrammar_termination.py:ro' \
         -v '/tmp/patch_spinwait.py:/opt/dsv41/patch_spinwait.py:ro' \
+        -v '/tmp/patch_apc_head_lease.py:/opt/dsv41/patch_apc_head_lease.py:ro' \
         -v '/tmp/dsv41-exl3.py:/opt/dsv41/exl3.py:ro' \
         -v '/tmp/exl3_k_map.json:/opt/dsv41/exl3_k_map.json:ro' \
         -v '/tmp/patch_exl3_packed_names.py:/opt/dsv41/patch_exl3_packed_names.py:ro' \
@@ -1460,6 +1473,7 @@ launch_cluster() {
         -v "$SCHED_PATCH_HOST:/opt/dsv41/patch_scheduler_decode_floor.py:ro" \
         -v "$XGRAMMAR_PATCH_HOST:/opt/dsv41/patch_xgrammar_termination.py:ro" \
         -v "$SPINWAIT_PATCH_HOST:/opt/dsv41/patch_spinwait.py:ro" \
+        -v "$APC_HEAD_LEASE_PATCH_HOST:/opt/dsv41/patch_apc_head_lease.py:ro" \
         -v "$EXL3_OVERLAY_HOST:/opt/dsv41/exl3.py:ro" \
         -v "$KMAP_HOST:/opt/dsv41/exl3_k_map.json:ro" \
         -v "$SCRIPT_DIR/overlay/patch_exl3_packed_names.py:/opt/dsv41/patch_exl3_packed_names.py:ro" \
@@ -1725,7 +1739,7 @@ start() {
 
     log "model load path (in-container): ${MODEL_DIR}"
     log "engram path (in-container): ${ENGRAM_MOUNT}  host=${HEAD_ENGRAM_BIND:-$ENGRAM_SRC}  worker=${WORKER_ENGRAM_BIND}"
-    log "config: image=${IMAGE} tp=${TP} nnodes=${NNODES} quant=${QUANTIZATION} spec=${SPEC_METHOD} dspark_k=${DSPARK_TOKENS} max-len=${MAX_MODEL_LEN} mnbt=${MAX_NUM_BATCHED_TOKENS} gpu-util=${GPU_MEM_UTIL} kv=${KV_CACHE_DTYPE:-native} kv-pool=${KV_CACHE_MEMORY_BYTES:-profiled} kv-block=${KV_BLOCK_SIZE:-auto} lm-only=${LANGUAGE_MODEL_ONLY} port=${PORT}"
+    log "config: image=${IMAGE} tp=${TP} nnodes=${NNODES} quant=${QUANTIZATION} spec=${SPEC_METHOD} dspark_k=${DSPARK_TOKENS} max-len=${MAX_MODEL_LEN} mnbt=${MAX_NUM_BATCHED_TOKENS} gpu-util=${GPU_MEM_UTIL} kv=${KV_CACHE_DTYPE:-native} kv-pool=${KV_CACHE_MEMORY_BYTES:-profiled} kv-block=${KV_BLOCK_SIZE:-auto} apc-head-lease=${DSV41_APC_HEAD_LEASE} lm-only=${LANGUAGE_MODEL_ONLY} port=${PORT}"
     log "memory: engram cache=${DSV41_CACHE_GIB}GiB resident_scales=${DSV41_RESIDENT_SCALES} io_threads=${DSV41_IO_THREADS} guard=$([ "${DSV41_MEM_GUARD:-0}" = "1" ] && echo "<${DSV41_MEM_GUARD_GIB}GiB" || echo off) boot-margin=${DSV41_BOOT_MARGIN_GIB}GiB"
     log "exl3: fused=${EXL3_FUSED_MOE} fat_kernel=${EXL3_FAT_KERNEL} fat_grouped=${EXL3_FAT_GROUPED} temp_rows=${EXL3_TEMP_ROWS_FUSED} (E3 v2 kernels: K2/K3/K4 mul1 + K4 mcg; E2 stays K4/MCG-only)"
 
